@@ -10,13 +10,13 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 
-st.set_page_config(page_title="Synthetic Germline Dashboard")
+st.set_page_config(page_title="Germline Feasibility Dashboard", layout="wide")
 
-st.title("Synthetic Germline Cancer Dashboard")
-st.caption("⚠️ All data is simulated for demonstration purposes")
+st.title("Germline Translational Feasibility Dashboard")
+st.caption("Simulated aggregate dataset for educational purposes only.")
 
 # -----------------------
-# Synthetic Data
+# Synthetic Aggregate Data
 # -----------------------
 
 np.random.seed(42)
@@ -24,48 +24,138 @@ np.random.seed(42)
 cancers = ["Breast", "Ovarian", "Prostate", "Colon"]
 genes = ["BRCA1", "BRCA2", "TP53", "PALB2", "CHEK2", "ATM"]
 
-cohort_sizes = {
-    "Breast": 1000,
-    "Ovarian": 600,
-    "Prostate": 800,
-    "Colon": 750
-}
-
-prevalence = {
-    "Breast": {"BRCA1": 0.08, "BRCA2": 0.07, "TP53": 0.02, "PALB2": 0.03, "CHEK2": 0.04, "ATM": 0.05},
-    "Ovarian": {"BRCA1": 0.15, "BRCA2": 0.10, "TP53": 0.01, "PALB2": 0.02, "CHEK2": 0.01, "ATM": 0.02},
-    "Prostate": {"BRCA1": 0.02, "BRCA2": 0.06, "TP53": 0.01, "PALB2": 0.02, "CHEK2": 0.03, "ATM": 0.04},
-    "Colon": {"BRCA1": 0.01, "BRCA2": 0.01, "TP53": 0.05, "PALB2": 0.01, "CHEK2": 0.02, "ATM": 0.03}
-}
+project_categories = [
+    "None",
+    "WGS",
+    "WES",
+    "SNP",
+    "WGS + WES",
+    "WGS + SNP",
+    "WES + SNP",
+    "WGS + WES + SNP"
+]
 
 data = []
 
+base_totals = {
+    "Breast": 1200,
+    "Ovarian": 700,
+    "Prostate": 900,
+    "Colon": 800
+}
+
+pre_cancer_rate = {
+    "Breast": 0.35,
+    "Ovarian": 0.30,
+    "Prostate": 0.25,
+    "Colon": 0.20
+}
+
 for cancer in cancers:
+    total_cases = base_totals[cancer]
+    pre_cases = int(total_cases * pre_cancer_rate[cancer])
+    post_cases = total_cases - pre_cases
+
+    # Distribute projects only among pre-cancer samples
+    project_distribution = {
+        "None": 0.40,
+        "WGS": 0.15,
+        "WES": 0.15,
+        "SNP": 0.10,
+        "WGS + WES": 0.08,
+        "WGS + SNP": 0.05,
+        "WES + SNP": 0.04,
+        "WGS + WES + SNP": 0.03
+    }
+
     for gene in genes:
-        cases = int(cohort_sizes[cancer] * prevalence[cancer][gene])
-        data.append({
-            "Cancer": cancer,
-            "Gene": gene,
-            "Cases": cases,
-            "Frequency (%)": prevalence[cancer][gene] * 100
-        })
+        # Random gene distribution
+        gene_fraction = np.random.uniform(0.05, 0.20)
 
-df = pd.DataFrame(data)
+        # Pre-cancer rows
+        for project, pct in project_distribution.items():
+            cases = int(pre_cases * pct * gene_fraction)
+            data.append([cancer, "Yes", project, gene, cases])
+
+        # Post-cancer rows (no projects allowed)
+        cases = int(post_cases * gene_fraction)
+        data.append([cancer, "No", "None", gene, cases])
+
+df = pd.DataFrame(data, columns=["Cancer", "PreCancer", "Project", "Gene", "Cases"])
 
 # -----------------------
-# UI
+# Filters
 # -----------------------
 
-selected_cancer = st.selectbox("Select Cancer Type", cancers)
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    selected_cancer = st.selectbox("Cancer Type", cancers)
+
+with col2:
+    pre_filter = st.selectbox("Pre-Cancer Blood Sample", ["All", "Yes", "No"])
+
+with col3:
+    project_filter = st.multiselect(
+        "Project Participation",
+        project_categories,
+        default=project_categories
+    )
 
 filtered_df = df[df["Cancer"] == selected_cancer]
 
-fig = px.bar(
-    filtered_df,
+if pre_filter != "All":
+    filtered_df = filtered_df[filtered_df["PreCancer"] == pre_filter]
+
+filtered_df = filtered_df[filtered_df["Project"].isin(project_filter)]
+
+# -----------------------
+# KPIs
+# -----------------------
+
+total_cases = filtered_df["Cases"].sum()
+
+pre_cases = df[
+    (df["Cancer"] == selected_cancer) &
+    (df["PreCancer"] == "Yes")
+]["Cases"].sum()
+
+project_cases = df[
+    (df["Cancer"] == selected_cancer) &
+    (df["Project"] != "None")
+]["Cases"].sum()
+
+k1, k2, k3 = st.columns(3)
+k1.metric("Total Cases (Filtered)", total_cases)
+k2.metric("% With Pre-Cancer Sample", f"{round(pre_cases / base_totals[selected_cancer] * 100,1)}%")
+k3.metric("% Used in ≥1 Project", f"{round(project_cases / base_totals[selected_cancer] * 100,1)}%")
+
+# -----------------------
+# Gene Distribution Chart
+# -----------------------
+
+gene_summary = filtered_df.groupby("Gene")["Cases"].sum().reset_index()
+
+fig1 = px.bar(
+    gene_summary,
     x="Gene",
     y="Cases",
-    text="Frequency (%)",
-    title=f"Germline Findings in {selected_cancer}"
+    title="Germline Gene Distribution",
 )
 
-st.plotly_chart(fig, use_container_width=True)
+st.plotly_chart(fig1, use_container_width=True)
+
+# -----------------------
+# Project Utilization Chart
+# -----------------------
+
+project_summary = filtered_df.groupby("Project")["Cases"].sum().reset_index()
+
+fig2 = px.bar(
+    project_summary,
+    x="Project",
+    y="Cases",
+    title="Project Utilization Distribution"
+)
+
+st.plotly_chart(fig2, use_container_width=True)
