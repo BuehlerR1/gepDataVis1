@@ -26,13 +26,13 @@ genes = ["BRCA1", "BRCA2", "TP53", "PALB2", "CHEK2", "ATM"]
 
 project_categories = [
     "None",
-    "WGS",
-    "WES",
-    "SNP",
-    "WGS + WES",
-    "WGS + SNP",
-    "WES + SNP",
-    "WGS + WES + SNP"
+    "WGS Project A (contact info)",
+    "WES Project B (contact info)",
+    "SNP Project C (contact info)",
+    "WGS Project A (contact info) + WES Project B (contact info)",
+    "WGS Project A (contact info) + SNP Project C (contact info)",
+    "WES Project B (contact info) + SNP Project C (contact info)",
+    "WGS Project A (contact info) + WES Project B (contact info) + SNP Project C (contact info)"
 ]
 
 data = []
@@ -157,5 +157,6 @@ fig2 = px.bar(
     y="Cases",
     title="Project Utilization Distribution"
 )
+
 
 st.plotly_chart(fig2, use_container_width=True)
