@@ -13,13 +13,13 @@ import plotly.express as px
 st.set_page_config(page_title="Germline Feasibility Dashboard", layout="wide")
 
 st.title("Germline Translational Feasibility Dashboard")
-st.caption("Simulated aggregate dataset for educational purposes only.")
-
-# -----------------------
-# Synthetic Aggregate Data
-# -----------------------
+st.caption("Simulated aggregate dataset for feasibility exploration only.")
 
 np.random.seed(42)
+
+# -----------------------
+# Core Definitions
+# -----------------------
 
 cancers = ["Breast", "Ovarian", "Prostate", "Colon"]
 genes = ["BRCA1", "BRCA2", "TP53", "PALB2", "CHEK2", "ATM"]
@@ -35,7 +35,11 @@ project_categories = [
     "WGS Project A (contact info) + WES Project B (contact info) + SNP Project C (contact info)"
 ]
 
-data = []
+years = list(range(2010, 2026))
+
+# -----------------------
+# Base Totals
+# -----------------------
 
 base_totals = {
     "Breast": 1200,
@@ -51,43 +55,68 @@ pre_cancer_rate = {
     "Colon": 0.20
 }
 
+project_distribution = {
+    "None": 0.40,
+    "WGS Project A (contact info)": 0.15,
+    "WES Project B (contact info)": 0.15,
+    "SNP Project C (contact info)": 0.10,
+    "WGS Project A (contact info) + WES Project B (contact info)": 0.08,
+    "WGS Project A (contact info) + SNP Project C (contact info)": 0.05,
+    "WES Project B (contact info) + SNP Project C (contact info)": 0.04,
+    "WGS Project A (contact info) + WES Project B (contact info) + SNP Project C (contact info)": 0.03
+}
+
+data = []
+
+# -----------------------
+# Generate Aggregate Data
+# -----------------------
+
 for cancer in cancers:
     total_cases = base_totals[cancer]
-    pre_cases = int(total_cases * pre_cancer_rate[cancer])
-    post_cases = total_cases - pre_cases
 
-    # Distribute projects only among pre-cancer samples
-    project_distribution = {
-        "None": 0.40,
-        "WGS": 0.15,
-        "WES": 0.15,
-        "SNP": 0.10,
-        "WGS + WES": 0.08,
-        "WGS + SNP": 0.05,
-        "WES + SNP": 0.04,
-        "WGS + WES + SNP": 0.03
-    }
+    for year in years:
 
-    for gene in genes:
-        # Random gene distribution
-        gene_fraction = np.random.uniform(0.05, 0.20)
+        # 20% before 2015
+        if year < 2015:
+            year_weight = 0.04   # ~20% across 5 years
+            accessible = "No"
+        else:
+            year_weight = 0.08   # remaining ~80% across 11 years
+            accessible = "Yes"
 
-        # Pre-cancer rows
-        for project, pct in project_distribution.items():
-            cases = int(pre_cases * pct * gene_fraction)
-            data.append([cancer, "Yes", project, gene, cases])
+        yearly_cases = int(total_cases * year_weight)
 
-        # Post-cancer rows (no projects allowed)
-        cases = int(post_cases * gene_fraction)
-        data.append([cancer, "No", "None", gene, cases])
+        pre_cases = int(yearly_cases * pre_cancer_rate[cancer])
+        post_cases = yearly_cases - pre_cases
 
-df = pd.DataFrame(data, columns=["Cancer", "PreCancer", "Project", "Gene", "Cases"])
+        for gene in genes:
+            gene_fraction = np.random.uniform(0.05, 0.20)
+
+            # Pre-cancer + project distribution
+            for project, pct in project_distribution.items():
+                cases = int(pre_cases * pct * gene_fraction)
+                data.append([cancer, year, accessible, "Yes", project, gene, cases])
+
+            # Post-cancer (no projects)
+            cases = int(post_cases * gene_fraction)
+            data.append([cancer, year, accessible, "No", "None", gene, cases])
+
+df = pd.DataFrame(data, columns=[
+    "Cancer",
+    "Year",
+    "Accessible",
+    "PreCancer",
+    "Project",
+    "Gene",
+    "Cases"
+])
 
 # -----------------------
 # Filters
 # -----------------------
 
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     selected_cancer = st.selectbox("Cancer Type", cancers)
@@ -102,7 +131,19 @@ with col3:
         default=project_categories
     )
 
+with col4:
+    year_range = st.slider(
+        "Year Range",
+        min(years),
+        max(years),
+        (2015, 2025)
+    )
+
 filtered_df = df[df["Cancer"] == selected_cancer]
+filtered_df = filtered_df[
+    (filtered_df["Year"] >= year_range[0]) &
+    (filtered_df["Year"] <= year_range[1])
+]
 
 if pre_filter != "All":
     filtered_df = filtered_df[filtered_df["PreCancer"] == pre_filter]
@@ -114,21 +155,12 @@ filtered_df = filtered_df[filtered_df["Project"].isin(project_filter)]
 # -----------------------
 
 total_cases = filtered_df["Cases"].sum()
-
-pre_cases = df[
-    (df["Cancer"] == selected_cancer) &
-    (df["PreCancer"] == "Yes")
-]["Cases"].sum()
-
-project_cases = df[
-    (df["Cancer"] == selected_cancer) &
-    (df["Project"] != "None")
-]["Cases"].sum()
+accessible_cases = filtered_df[filtered_df["Accessible"] == "Yes"]["Cases"].sum()
 
 k1, k2, k3 = st.columns(3)
 k1.metric("Total Cases (Filtered)", total_cases)
-k2.metric("% With Pre-Cancer Sample", f"{round(pre_cases / base_totals[selected_cancer] * 100,1)}%")
-k3.metric("% Used in ≥1 Project", f"{round(project_cases / base_totals[selected_cancer] * 100,1)}%")
+k2.metric("Accessible Cases", accessible_cases)
+k3.metric("% Accessible", f"{round((accessible_cases / total_cases * 100),1) if total_cases > 0 else 0}%")
 
 # -----------------------
 # Gene Distribution Chart
@@ -140,7 +172,7 @@ fig1 = px.bar(
     gene_summary,
     x="Gene",
     y="Cases",
-    title="Germline Gene Distribution",
+    title="Germline Gene Distribution"
 )
 
 st.plotly_chart(fig1, use_container_width=True)
@@ -158,5 +190,15 @@ fig2 = px.bar(
     title="Project Utilization Distribution"
 )
 
-
 st.plotly_chart(fig2, use_container_width=True)
+
+# -----------------------
+# CSV Download
+# -----------------------
+
+st.download_button(
+    label="Download Filtered Dataset (CSV)",
+    data=filtered_df.to_csv(index=False),
+    file_name="filtered_germline_feasibility_data.csv",
+    mime="text/csv"
+)
